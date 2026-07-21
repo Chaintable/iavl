@@ -38,6 +38,31 @@ func TestDiffRoundTrip(t *testing.T) {
 	require.Equal(t, changeSets, extractChangeSets)
 }
 
+func TestTraverseStateChangesRequiresPreviousVersion(t *testing.T) {
+	db := dbm.NewMemDB()
+	tree := NewMutableTree(db, 0, true, NewNopLogger())
+	for _, changeSet := range []*ChangeSet{
+		{Pairs: []*KVPair{{Key: []byte("a"), Value: []byte("1")}}},
+		{Pairs: []*KVPair{{Key: []byte("b"), Value: []byte("2")}}},
+		{Pairs: []*KVPair{{Key: []byte("c"), Value: []byte("3")}}},
+		{Pairs: []*KVPair{{Key: []byte("a"), Value: []byte("4")}}},
+		{Pairs: []*KVPair{{Key: []byte("b"), Value: []byte("5")}}},
+	} {
+		_, err := tree.SaveChangeSet(changeSet)
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, tree.DeleteVersionsTo(3))
+
+	callbacks := 0
+	err := tree.TraverseStateChanges(4, 4, func(int64, *ChangeSet) error {
+		callbacks++
+		return nil
+	})
+	require.ErrorIs(t, err, ErrVersionDoesNotExist)
+	require.Zero(t, callbacks)
+}
+
 func genChangeSets(r *rand.Rand, n int) []*ChangeSet {
 	var changeSets []*ChangeSet
 
