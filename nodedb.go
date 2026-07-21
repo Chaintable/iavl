@@ -1271,7 +1271,7 @@ func (ndb *nodeDB) traverseStateChanges(startVersion, endVersion int64, fn func(
 
 	prevVersion := startVersion - 1
 	prevRoot, err := ndb.GetRoot(prevVersion)
-	if err != nil && err != ErrVersionDoesNotExist {
+	if err != nil && (err != ErrVersionDoesNotExist || prevVersion > 0) {
 		return err
 	}
 
