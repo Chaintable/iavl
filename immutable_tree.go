@@ -141,7 +141,9 @@ func (t *ImmutableTree) VersionHash(version int64) ([]byte, error) {
 	}
 	var root *Node
 	if rootNodeKey != nil {
-		root, err = t.ndb.GetNode(rootNodeKey)
+		t.ndb.mtx.Lock()
+		root, err = t.ndb.getNodeFromDisk(rootNodeKey)
+		t.ndb.mtx.Unlock()
 		if err != nil {
 			return nil, err
 		}
