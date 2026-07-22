@@ -200,6 +200,18 @@ func TestLegacyInspectionRejectsBadRecords(t *testing.T) {
 			want: "child hash lengths",
 		},
 		{
+			name: "node non-canonical varint",
+			prepare: func(t *testing.T, db *dbm.MemDB) {
+				hash, body := makeLegacyInspectionNode(t, 0, 1, 1, []byte("key"), []byte("value"), nil)
+				noncanonical := append([]byte{0x80, 0x00}, body[1:]...)
+				require.NoError(t, db.Set(legacyNodeKeyFormat.Key(hash), noncanonical))
+			},
+			inspect: func(db dbm.DB) error {
+				return InspectLegacyNodes(db, func(LegacyNodeRecord) error { return nil })
+			},
+			want: "non-canonical encoding",
+		},
+		{
 			name: "node hash mismatch",
 			prepare: func(t *testing.T, db *dbm.MemDB) {
 				body := encodeLegacyInspectionNode(t, 0, 1, 1, []byte("key"), []byte("value"), nil)

@@ -209,6 +209,13 @@ func decodeLegacyNodeRecord(dbKey, body []byte) (LegacyNodeRecord, error) {
 	if len(rest) != 0 {
 		return LegacyNodeRecord{}, fmt.Errorf("legacy node %x has %d trailing bytes", hash, len(rest))
 	}
+	canonicalBody, err := encodeLegacyNodeRecord(record)
+	if err != nil {
+		return LegacyNodeRecord{}, err
+	}
+	if !bytes.Equal(body, canonicalBody) {
+		return LegacyNodeRecord{}, fmt.Errorf("legacy node %x has non-canonical encoding", hash)
+	}
 	computedHash, err := hashLegacyNodeRecord(record)
 	if err != nil {
 		return LegacyNodeRecord{}, err
@@ -217,6 +224,35 @@ func decodeLegacyNodeRecord(dbKey, body []byte) (LegacyNodeRecord, error) {
 		return LegacyNodeRecord{}, fmt.Errorf("legacy node key hash %x does not match computed hash %x", record.Hash, computedHash)
 	}
 	return record, nil
+}
+
+func encodeLegacyNodeRecord(record LegacyNodeRecord) ([]byte, error) {
+	var body bytes.Buffer
+	if err := encoding.EncodeVarint(&body, int64(record.Height)); err != nil {
+		return nil, err
+	}
+	if err := encoding.EncodeVarint(&body, record.Size); err != nil {
+		return nil, err
+	}
+	if err := encoding.EncodeVarint(&body, record.Version); err != nil {
+		return nil, err
+	}
+	if err := encoding.EncodeBytes(&body, record.Key); err != nil {
+		return nil, err
+	}
+	if record.IsLeaf() {
+		if err := encoding.EncodeBytes(&body, record.Value); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := encoding.EncodeBytes(&body, record.LeftHash); err != nil {
+			return nil, err
+		}
+		if err := encoding.EncodeBytes(&body, record.RightHash); err != nil {
+			return nil, err
+		}
+	}
+	return body.Bytes(), nil
 }
 
 func hashLegacyNodeRecord(record LegacyNodeRecord) ([]byte, error) {
