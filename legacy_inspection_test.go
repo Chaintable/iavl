@@ -45,16 +45,12 @@ func TestInspectLegacyRootsSortedAndOwned(t *testing.T) {
 
 func TestInspectLegacyNodesSortedLeafAndBranch(t *testing.T) {
 	db := dbm.NewMemDB()
-	leafHash := bytes.Repeat([]byte{1}, hashSize)
-	branchHash := bytes.Repeat([]byte{2}, hashSize)
 	leftHash := bytes.Repeat([]byte{3}, hashSize)
 	rightHash := bytes.Repeat([]byte{4}, hashSize)
-	require.NoError(t, db.Set(legacyNodeKeyFormat.Key(branchHash), encodeLegacyInspectionNode(
-		t, 1, 2, 7, []byte("middle"), leftHash, rightHash,
-	)))
-	require.NoError(t, db.Set(legacyNodeKeyFormat.Key(leafHash), encodeLegacyInspectionNode(
-		t, 0, 1, 3, []byte("storage-key"), []byte("storage-value"), nil,
-	)))
+	branchHash, branchBody := makeLegacyInspectionNode(t, 1, 2, 7, []byte("middle"), leftHash, rightHash)
+	leafHash, leafBody := makeLegacyInspectionNode(t, 0, 1, 3, []byte("storage-key"), []byte("storage-value"), nil)
+	require.NoError(t, db.Set(legacyNodeKeyFormat.Key(branchHash), branchBody))
+	require.NoError(t, db.Set(legacyNodeKeyFormat.Key(leafHash), leafBody))
 
 	var records []LegacyNodeRecord
 	require.NoError(t, InspectLegacyNodes(db, func(record LegacyNodeRecord) error {
@@ -62,26 +58,30 @@ func TestInspectLegacyNodesSortedLeafAndBranch(t *testing.T) {
 		return nil
 	}))
 	require.Len(t, records, 2)
-	require.Equal(t, leafHash, records[0].Hash)
-	require.True(t, records[0].IsLeaf())
-	require.Equal(t, int64(3), records[0].Version)
-	require.Equal(t, []byte("storage-key"), records[0].Key)
-	require.Equal(t, []byte("storage-value"), records[0].Value)
-	require.Nil(t, records[0].LeftHash)
-	require.Nil(t, records[0].RightHash)
+	require.Negative(t, bytes.Compare(records[0].Hash, records[1].Hash))
+	byHash := map[string]LegacyNodeRecord{
+		string(records[0].Hash): records[0], string(records[1].Hash): records[1],
+	}
+	leaf := byHash[string(leafHash)]
+	require.True(t, leaf.IsLeaf())
+	require.Equal(t, int64(3), leaf.Version)
+	require.Equal(t, []byte("storage-key"), leaf.Key)
+	require.Equal(t, []byte("storage-value"), leaf.Value)
+	require.Nil(t, leaf.LeftHash)
+	require.Nil(t, leaf.RightHash)
 
-	require.Equal(t, branchHash, records[1].Hash)
-	require.False(t, records[1].IsLeaf())
-	require.Equal(t, int64(7), records[1].Version)
-	require.Equal(t, int8(1), records[1].Height)
-	require.Equal(t, int64(2), records[1].Size)
-	require.Equal(t, []byte("middle"), records[1].Key)
-	require.Nil(t, records[1].Value)
-	require.Equal(t, leftHash, records[1].LeftHash)
-	require.Equal(t, rightHash, records[1].RightHash)
+	branch := byHash[string(branchHash)]
+	require.False(t, branch.IsLeaf())
+	require.Equal(t, int64(7), branch.Version)
+	require.Equal(t, int8(1), branch.Height)
+	require.Equal(t, int64(2), branch.Size)
+	require.Equal(t, []byte("middle"), branch.Key)
+	require.Nil(t, branch.Value)
+	require.Equal(t, leftHash, branch.LeftHash)
+	require.Equal(t, rightHash, branch.RightHash)
 
-	records[0].Key[0] = 'X'
-	records[0].Value[0] = 'X'
+	leaf.Key[0] = 'X'
+	leaf.Value[0] = 'X'
 	var leafAgain LegacyNodeRecord
 	require.NoError(t, InspectLegacyNodes(db, func(record LegacyNodeRecord) error {
 		if record.IsLeaf() {
@@ -200,6 +200,17 @@ func TestLegacyInspectionRejectsBadRecords(t *testing.T) {
 			want: "child hash lengths",
 		},
 		{
+			name: "node hash mismatch",
+			prepare: func(t *testing.T, db *dbm.MemDB) {
+				body := encodeLegacyInspectionNode(t, 0, 1, 1, []byte("key"), []byte("value"), nil)
+				require.NoError(t, db.Set(legacyNodeKeyFormat.Key(bytes.Repeat([]byte{1}, hashSize)), body))
+			},
+			inspect: func(db dbm.DB) error {
+				return InspectLegacyNodes(db, func(LegacyNodeRecord) error { return nil })
+			},
+			want: "does not match computed hash",
+		},
+		{
 			name: "orphan hash mismatch",
 			prepare: func(t *testing.T, db *dbm.MemDB) {
 				hash := bytes.Repeat([]byte{1}, hashSize)
@@ -222,6 +233,26 @@ func TestLegacyInspectionRejectsBadRecords(t *testing.T) {
 			require.ErrorContains(t, err, test.want)
 		})
 	}
+}
+
+func makeLegacyInspectionNode(
+	t *testing.T,
+	height, size, version int64,
+	key, firstBody, secondBody []byte,
+) ([]byte, []byte) {
+	t.Helper()
+	body := encodeLegacyInspectionNode(t, height, size, version, key, firstBody, secondBody)
+	record := LegacyNodeRecord{
+		Version: version, Height: int8(height), Size: size, Key: key,
+	}
+	if height == 0 {
+		record.Value = firstBody
+	} else {
+		record.LeftHash, record.RightHash = firstBody, secondBody
+	}
+	hash, err := hashLegacyNodeRecord(record)
+	require.NoError(t, err)
+	return hash, body
 }
 
 func encodeLegacyInspectionNode(

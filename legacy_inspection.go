@@ -2,6 +2,7 @@ package iavl
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math"
@@ -208,7 +209,44 @@ func decodeLegacyNodeRecord(dbKey, body []byte) (LegacyNodeRecord, error) {
 	if len(rest) != 0 {
 		return LegacyNodeRecord{}, fmt.Errorf("legacy node %x has %d trailing bytes", hash, len(rest))
 	}
+	computedHash, err := hashLegacyNodeRecord(record)
+	if err != nil {
+		return LegacyNodeRecord{}, err
+	}
+	if !bytes.Equal(record.Hash, computedHash) {
+		return LegacyNodeRecord{}, fmt.Errorf("legacy node key hash %x does not match computed hash %x", record.Hash, computedHash)
+	}
 	return record, nil
+}
+
+func hashLegacyNodeRecord(record LegacyNodeRecord) ([]byte, error) {
+	hasher := sha256.New()
+	if err := encoding.EncodeVarint(hasher, int64(record.Height)); err != nil {
+		return nil, err
+	}
+	if err := encoding.EncodeVarint(hasher, record.Size); err != nil {
+		return nil, err
+	}
+	if err := encoding.EncodeVarint(hasher, record.Version); err != nil {
+		return nil, err
+	}
+	if record.IsLeaf() {
+		if err := encoding.EncodeBytes(hasher, record.Key); err != nil {
+			return nil, err
+		}
+		valueHash := sha256.Sum256(record.Value)
+		if err := encoding.EncodeBytes(hasher, valueHash[:]); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := encoding.EncodeBytes(hasher, record.LeftHash); err != nil {
+			return nil, err
+		}
+		if err := encoding.EncodeBytes(hasher, record.RightHash); err != nil {
+			return nil, err
+		}
+	}
+	return hasher.Sum(nil), nil
 }
 
 func consumeLegacyVarint(body *[]byte, field string) (int64, error) {
