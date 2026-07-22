@@ -1356,6 +1356,17 @@ func (ndb *nodeDB) traverseNodes(fn func(node *Node) error) error {
 // traverseStateChanges iterate the range of versions, compare each version to it's predecessor to extract the state changes of it.
 // endVersion is exclusive, set to `math.MaxInt64` to cover the latest version.
 func (ndb *nodeDB) traverseStateChanges(startVersion, endVersion int64, fn func(version int64, changeSet *ChangeSet) error) error {
+	return ndb.traverseStateChangesInKeyRange(startVersion, endVersion, nil, nil, fn)
+}
+
+func (ndb *nodeDB) traverseStateChangesInKeyRange(
+	startVersion, endVersion int64,
+	startKey, endKey []byte,
+	fn func(version int64, changeSet *ChangeSet) error,
+) error {
+	if startKey != nil && endKey != nil && bytes.Compare(startKey, endKey) > 0 {
+		return fmt.Errorf("invalid state change key range %x-%x", startKey, endKey)
+	}
 	firstVersion, err := ndb.getFirstVersion()
 	if err != nil {
 		return err
@@ -1389,7 +1400,7 @@ func (ndb *nodeDB) traverseStateChanges(startVersion, endVersion int64, fn func(
 			return nil
 		}
 
-		if err := ndb.extractStateChanges(prevVersion, prevRoot, root, receiveKVPair); err != nil {
+		if err := ndb.extractStateChangesInKeyRange(prevVersion, prevRoot, root, startKey, endKey, receiveKVPair); err != nil {
 			return err
 		}
 

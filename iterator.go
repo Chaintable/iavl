@@ -264,15 +264,23 @@ func (iter *Iterator) IsFast() bool {
 type NodeIterator struct {
 	nodesToVisit []*Node
 	ndb          *nodeDB
+	start        []byte
+	end          []byte
 	err          error
 }
 
 // NewNodeIterator returns a new NodeIterator to traverse the tree of the root node.
 func NewNodeIterator(rootKey []byte, ndb *nodeDB) (*NodeIterator, error) {
+	return newNodeIterator(rootKey, ndb, nil, nil)
+}
+
+func newNodeIterator(rootKey []byte, ndb *nodeDB, start, end []byte) (*NodeIterator, error) {
 	if len(rootKey) == 0 {
 		return &NodeIterator{
 			nodesToVisit: []*Node{},
 			ndb:          ndb,
+			start:        start,
+			end:          end,
 		}, nil
 	}
 
@@ -284,6 +292,8 @@ func NewNodeIterator(rootKey []byte, ndb *nodeDB) (*NodeIterator, error) {
 	return &NodeIterator{
 		nodesToVisit: []*Node{node},
 		ndb:          ndb,
+		start:        start,
+		end:          end,
 	}, nil
 }
 
@@ -319,17 +329,21 @@ func (iter *NodeIterator) Next(isSkipped bool) {
 		return
 	}
 
-	rightNode, err := iter.ndb.GetNode(node.rightNodeKey)
-	if err != nil {
-		iter.err = err
-		return
+	if iter.end == nil || bytes.Compare(node.key, iter.end) < 0 {
+		rightNode, err := iter.ndb.GetNode(node.rightNodeKey)
+		if err != nil {
+			iter.err = err
+			return
+		}
+		iter.nodesToVisit = append(iter.nodesToVisit, rightNode)
 	}
-	iter.nodesToVisit = append(iter.nodesToVisit, rightNode)
 
-	leftNode, err := iter.ndb.GetNode(node.leftNodeKey)
-	if err != nil {
-		iter.err = err
-		return
+	if iter.start == nil || bytes.Compare(iter.start, node.key) < 0 {
+		leftNode, err := iter.ndb.GetNode(node.leftNodeKey)
+		if err != nil {
+			iter.err = err
+			return
+		}
+		iter.nodesToVisit = append(iter.nodesToVisit, leftNode)
 	}
-	iter.nodesToVisit = append(iter.nodesToVisit, leftNode)
 }

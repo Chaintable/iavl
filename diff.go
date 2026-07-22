@@ -22,12 +22,20 @@ type KVPairReceiver func(pair *KVPair) error
 // The algorithm don't run in constant memory strictly, but it tried the best the only
 // keep minimal intermediate states in memory.
 func (ndb *nodeDB) extractStateChanges(prevVersion int64, prevRoot, root []byte, receiver KVPairReceiver) error {
-	curIter, err := NewNodeIterator(root, ndb)
+	return ndb.extractStateChangesInKeyRange(prevVersion, prevRoot, root, nil, nil, receiver)
+}
+
+func (ndb *nodeDB) extractStateChangesInKeyRange(
+	prevVersion int64,
+	prevRoot, root, startKey, endKey []byte,
+	receiver KVPairReceiver,
+) error {
+	curIter, err := newNodeIterator(root, ndb, startKey, endKey)
 	if err != nil {
 		return err
 	}
 
-	prevIter, err := NewNodeIterator(prevRoot, ndb)
+	prevIter, err := newNodeIterator(prevRoot, ndb, startKey, endKey)
 	if err != nil {
 		return err
 	}
@@ -66,12 +74,12 @@ func (ndb *nodeDB) extractStateChanges(prevVersion int64, prevRoot, root []byte,
 		sharedNode = nil
 		for curIter.Valid() {
 			node := curIter.GetNode()
-			shared := node.nodeKey.version <= prevVersion
+			shared := node.nodeKey.version <= prevVersion && (!node.isLeaf() || keyInRange(node.key, startKey, endKey))
 			curIter.Next(shared)
 			if shared {
 				sharedNode = node
 				break
-			} else if node.isLeaf() {
+			} else if node.isLeaf() && keyInRange(node.key, startKey, endKey) {
 				newLeaves = append(newLeaves, node)
 			}
 		}
@@ -134,7 +142,7 @@ func (ndb *nodeDB) extractStateChanges(prevVersion int64, prevRoot, root []byte,
 			if err := advanceSharedNode(); err != nil {
 				return err
 			}
-		} else if node.isLeaf() {
+		} else if node.isLeaf() && keyInRange(node.key, startKey, endKey) {
 			if err := addOrphanedLeave(node); err != nil {
 				return err
 			}
@@ -149,4 +157,9 @@ func (ndb *nodeDB) extractStateChanges(prevVersion int64, prevRoot, root []byte,
 		return err
 	}
 	return prevIter.Error()
+}
+
+func keyInRange(key, start, end []byte) bool {
+	return (start == nil || bytes.Compare(key, start) >= 0) &&
+		(end == nil || bytes.Compare(key, end) < 0)
 }
