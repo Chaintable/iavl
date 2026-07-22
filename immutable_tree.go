@@ -131,6 +131,26 @@ func (t *ImmutableTree) Version() int64 {
 	return t.version
 }
 
+// VersionHash resolves a saved version and returns its root hash. Unlike
+// MutableTree.VersionExists, this verifies that the root record and its target
+// node still exist. The returned slice is owned by the caller.
+func (t *ImmutableTree) VersionHash(version int64) ([]byte, error) {
+	rootNodeKey, err := t.ndb.GetRoot(version)
+	if err != nil {
+		return nil, err
+	}
+	var root *Node
+	if rootNodeKey != nil {
+		t.ndb.mtx.Lock()
+		root, err = t.ndb.getNodeFromDisk(rootNodeKey)
+		t.ndb.mtx.Unlock()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return append([]byte(nil), root.hashWithCount(version+1)...), nil
+}
+
 // Height returns the height of the tree.
 func (t *ImmutableTree) Height() int8 {
 	if t.root == nil {

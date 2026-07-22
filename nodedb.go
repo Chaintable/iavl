@@ -146,6 +146,20 @@ func (ndb *nodeDB) GetNode(nk []byte) (*Node, error) {
 	}
 
 	ndb.opts.Stat.IncCacheMissCnt()
+	node, err := ndb.getNodeFromDisk(nk)
+	if err != nil {
+		return nil, err
+	}
+	ndb.nodeCache.Add(node)
+	return node, nil
+}
+
+// getNodeFromDisk loads and decodes a node without consulting or updating the
+// node cache. The caller must hold ndb.mtx.
+func (ndb *nodeDB) getNodeFromDisk(nk []byte) (*Node, error) {
+	if nk == nil {
+		return nil, ErrNodeMissingNodeKey
+	}
 
 	// Doesn't exist, load.
 	isLegcyNode := len(nk) == hashSize
@@ -189,8 +203,6 @@ func (ndb *nodeDB) GetNode(nk []byte) (*Node, error) {
 			return nil, fmt.Errorf("error reading Node. bytes: %x, error: %v", buf, err)
 		}
 	}
-
-	ndb.nodeCache.Add(node)
 
 	return node, nil
 }
@@ -783,7 +795,7 @@ func (ndb *nodeDB) getFirstNonLegacyVersion() (int64, error) {
 	ndb.mtx.Unlock()
 
 	// Find the first version
-  latestVersion, err := ndb.getLatestVersion()
+	latestVersion, err := ndb.getLatestVersion()
 	if err != nil {
 		return 0, err
 	}
@@ -846,7 +858,7 @@ func (ndb *nodeDB) getFirstVersion() (int64, error) {
 
 	ndb.resetFirstVersion(latestVersion)
 
-  return latestVersion, nil
+	return latestVersion, nil
 }
 
 func (ndb *nodeDB) resetFirstVersion(version int64) {
