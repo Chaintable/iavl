@@ -350,3 +350,13 @@ func (t *ImmutableTree) nodeSize() int {
 func (t *ImmutableTree) TraverseStateChanges(startVersion, endVersion int64, fn func(version int64, changeSet *ChangeSet) error) error {
 	return t.ndb.traverseStateChanges(startVersion, endVersion, fn)
 }
+
+// TraverseStateChangesInKeyRange iterates the range of versions and extracts only
+// changes whose keys are in [startKey, endKey). A nil bound is unbounded.
+func (t *ImmutableTree) TraverseStateChangesInKeyRange(
+	startVersion, endVersion int64,
+	startKey, endKey []byte,
+	fn func(version int64, changeSet *ChangeSet) error,
+) error {
+	return t.ndb.traverseStateChangesInKeyRange(startVersion, endVersion, startKey, endKey, fn)
+}
